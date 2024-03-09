@@ -42,4 +42,4 @@ class SimCLRDataset:
     def get_dataset(self, n_views):
         """Return a dataset with the SimCLR pipeline."""
         data_transforms = self.get_simclr_pipeline_transform(self.kernel_size)
-        return self.data_fn("data/", train=True, transform=SimCLRViewGenerator(data_transforms, n_views))
+        return self.data_fn("data/", train=True, transform=SimCLRViewGenerator(data_transforms, n_views), download=True)
