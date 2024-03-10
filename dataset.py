@@ -1,4 +1,6 @@
 from torchvision import transforms, datasets
+import torch
+from torch.utils.data import Subset
 import numpy as np
 
 np.random.seed(0)
@@ -39,7 +41,21 @@ class SimCLRDataset:
                                               transforms.ToTensor()])
         return data_transforms
     
-    def get_dataset(self, n_views):
+    def _get_dataset(self, n_views, is_train, sample_rate=1):
         """Return a dataset with the SimCLR pipeline."""
         data_transforms = self.get_simclr_pipeline_transform(self.kernel_size)
-        return self.data_fn("data/", train=True, transform=SimCLRViewGenerator(data_transforms, n_views), download=True)
+        full_dataset = self.data_fn("data/", train=is_train, transform=SimCLRViewGenerator(data_transforms, n_views), download=True)
+        if sample_rate == 1:
+            return full_dataset
+        else:
+            indices = torch.randperm(len(full_dataset))
+            subset_indices = indices[:int(sample_rate * len(full_dataset))]
+            sampled_dataset = Subset(full_dataset, subset_indices)
+            return sampled_dataset
+    
+    def get_train_dataset(self, n_views, sample_rate=1):
+        return self._get_dataset(n_views, is_train=True, sample_rate=sample_rate)
+
+    def get_test_dataset(self, n_views):
+        return self._get_dataset(n_views, is_train=False)
+
