@@ -1,7 +1,5 @@
 from torch import nn
-import torch
-import torch.nn.functional as F
-from torchvision.models import resnet18, vgg16
+from torchvision.models import resnet18, resnet50, vgg16
 
 class SimCLRCNN(nn.Module):
 
@@ -9,6 +7,7 @@ class SimCLRCNN(nn.Module):
         super(SimCLRCNN, self).__init__()
         backbone_dict = {
             "resnet18": resnet18,
+            "resnet50": resnet50,
             "vgg16": vgg16
         }
         self.backbone = backbone_dict[backbone](num_classes=out_dim)

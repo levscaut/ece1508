@@ -14,7 +14,10 @@ class SimCLRViewGenerator:
         self.n_views = n_views
 
     def __call__(self, x):
-        return [self.base_transform(x) for i in range(self.n_views)]
+        if self.n_views == 1:
+            return self.base_transform(x)
+        else:
+            return [self.base_transform(x) for i in range(self.n_views)]
     
 class SimCLRDataset:
     
@@ -25,8 +28,12 @@ class SimCLRDataset:
         kernel_sizes = {
             "cifar10": 32,
         }
+        num_classes_map = {
+            "cifar10": 10,
+        }
         self.data_fn = dataset_map[dataset_name]
         self.kernel_size = kernel_sizes[dataset_name]
+        self.num_classes = num_classes_map[dataset_name]
 
     
     @staticmethod
