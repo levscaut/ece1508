@@ -66,3 +66,8 @@ class SimCLRDataset:
     def get_test_dataset(self, n_views):
         return self._get_dataset(n_views, is_train=False)
 
+    def get_train_val_datasets(self, n_views, val_split=0.2):
+        full_set = self._get_dataset(n_views, is_train=True)
+        split = torch.utils.data.random_split(full_set, [1-val_split, val_split])
+        return split[0], split[1]
+
