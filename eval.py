@@ -1,8 +1,11 @@
-import torch.nn.functional as F
 import torch
+import torch.nn.functional as F
+
 
 def info_nce_loss(features, device, args):
-    labels = torch.cat([torch.arange(args['batch_size']) for i in range(args['n_views'])], dim=0)
+    labels = torch.cat(
+        [torch.arange(args["batch_size"]) for i in range(args["n_views"])], dim=0
+    )
     labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
     labels = labels.to(device)
 
@@ -28,8 +31,9 @@ def info_nce_loss(features, device, args):
     logits = torch.cat([positives, negatives], dim=1)
     labels = torch.zeros(logits.shape[0], dtype=torch.long).to(device)
 
-    logits = logits / args['temperature']
+    logits = logits / args["temperature"]
     return logits, labels
+
 
 def metric(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
@@ -73,6 +77,7 @@ def standard_evaluation(model, test_loader, device, criterion, args):
         "top5": total_top5 / total_num,
     }
 
+
 def contrastive_evaluation(model, test_loader, device, loss_fn, criterion, args):
     model.eval()
     total_loss = 0.0
@@ -96,4 +101,3 @@ def contrastive_evaluation(model, test_loader, device, loss_fn, criterion, args)
         "top1": total_top1 / total_num,
         "top5": total_top5 / total_num,
     }
-
