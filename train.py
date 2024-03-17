@@ -10,8 +10,6 @@ from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
 def supervised_training(model, train_loader, val_loader, loss_fn, device, args, silent=False):
     if silent:
         print = lambda *args, **kwargs: None
-    else:
-        print = print
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -62,6 +60,8 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args, 
         model.state_dict(),
         f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
     )
+    eval_res = standard_evaluation(model, val_loader, device, loss_fn, args)
+    test_records.append(eval_res)
     return records, test_records
 
 
@@ -70,8 +70,6 @@ def contrastive_training(
 ):
     if silent:
         print = lambda *args, **kwargs: None
-    else:
-        print = print
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -124,6 +122,10 @@ def contrastive_training(
         model.state_dict(),
         f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
     )
+    eval_res = contrastive_evaluation(
+                model, val_loader, device, loss_fn, criterion, args
+            )
+    test_records.append(eval_res)
     return records, test_records
 
 
@@ -137,12 +139,12 @@ if __name__ == "__main__":
     args = {
         "dataset": "cifar10",
         "model": "resnet50",
-        "batch_size": 1024,
+        "batch_size": 256,
         "sample_rate": 1,
         "epochs": 100,
         "n_views": 2,
         "out_dim": 128,
-        "lr": 12e-4,
+        "lr": 3e-4,
         "wd": 1e-6,
         "log_every_n_steps": 5,
         "n_workers": 16,
