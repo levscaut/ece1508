@@ -221,9 +221,6 @@ if __name__ == "__main__":
     pd.DataFrame.from_records(val_records).to_csv(
         f"logs/{args['model']}_{args['dataset']}_{timestamp}_val.csv", index=False
     )
-    pd.DataFrame(test_records).to_csv(
-        f"logs/{args['model']}_{args['dataset']}_{timestamp}_test.csv", index=False
-    )
     if len(ft_train_records) > 0:
         pd.DataFrame.from_records(ft_train_records).to_csv(
             f"logs/{args['model']}_{args['dataset']}_{timestamp}_ft_train.csv", index=False
