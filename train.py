@@ -10,6 +10,8 @@ from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
 def supervised_training(model, train_loader, val_loader, loss_fn, device, args, silent=False):
     if silent:
         print = lambda *args, **kwargs: None
+    else:
+        print = print
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -68,6 +70,8 @@ def contrastive_training(
 ):
     if silent:
         print = lambda *args, **kwargs: None
+    else:
+        print = print
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
