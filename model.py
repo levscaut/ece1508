@@ -7,6 +7,8 @@ class SimCLRCNN(nn.Module):
         super(SimCLRCNN, self).__init__()
         backbone_dict = {"resnet18": resnet18, "resnet50": resnet50, "vgg16": vgg16}
         self.backbone = backbone_dict[backbone](num_classes=out_dim)
+        self.out_dim = out_dim
+        self.classifer = None
         if mod:
             dim_mlp = self.backbone.fc.in_features
             self.backbone.fc = nn.Sequential(
@@ -14,4 +16,13 @@ class SimCLRCNN(nn.Module):
             )
 
     def forward(self, x):
-        return self.backbone(x)
+        x = self.backbone(x)
+        if self.classifer is not None:
+            x = self.classifer(x)
+        return x
+    
+    def finetune(self, num_classes):
+        # Freeze the parameters of the backbone
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+        self.classifer = nn.Linear(self.out_dim, num_classes)

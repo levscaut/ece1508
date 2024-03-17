@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-
+from utils import build_dataloader
 
 def info_nce_loss(features, device, args):
     labels = torch.cat(
@@ -35,7 +35,7 @@ def info_nce_loss(features, device, args):
     return logits, labels
 
 
-def metric(output, target, topk=(1,)):
+def topk(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
     with torch.no_grad():
         maxk = max(topk)
@@ -51,12 +51,10 @@ def metric(output, target, topk=(1,)):
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
 
-
-def standard_evaluation(model, test_loader, device, criterion, args):
+def standard_evaluation(model, test_dataset, device, criterion, args):
+    test_loader = build_dataloader(test_dataset, args["batch_size"], args["n_workers"])
     model.eval()
-    total_loss = 0.0
-    total_top1 = 0.0
-    total_top5 = 0.0
+    total_loss, total_top1, total_top5, = 0.0, 0.0, 0.0
     total_num = 0
     with torch.no_grad():
         for images, labels in test_loader:
@@ -65,7 +63,7 @@ def standard_evaluation(model, test_loader, device, criterion, args):
             logits = model(images)
             loss = criterion(logits, labels)
             total_loss += loss.item()
-            top1, top5 = metric(logits, labels, topk=(1, 5))
+            top1, top5 = topk(logits, labels, topk=(1, 5))
             total_top1 += top1.item()
             total_top5 += top5.item()
             total_num += 1
@@ -78,11 +76,10 @@ def standard_evaluation(model, test_loader, device, criterion, args):
     }
 
 
-def contrastive_evaluation(model, test_loader, device, loss_fn, criterion, args):
+def contrastive_evaluation(model, test_dataset, device, loss_fn, criterion, args):
+    test_loader = build_dataloader(test_dataset, args["batch_size"], args["n_workers"])
     model.eval()
-    total_loss = 0.0
-    total_top1 = 0.0
-    total_top5 = 0.0
+    total_loss, total_top1, total_top5 = 0.0, 0.0, 0.0
     total_num = 0
     with torch.no_grad():
         for images, _ in test_loader:
@@ -91,7 +88,7 @@ def contrastive_evaluation(model, test_loader, device, loss_fn, criterion, args)
             logits, labels = info_nce_loss(features, device, args)
             loss = criterion(logits, labels)
             total_loss += loss.item()
-            top1, top5 = metric(logits, labels, topk=(1, 5))
+            top1, top5 = topk(logits, labels, topk=(1, 5))
             total_top1 += top1.item()
             total_top5 += top5.item()
             total_num += 1

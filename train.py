@@ -5,9 +5,13 @@ import torch
 from tqdm import tqdm
 
 from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
+from utils import build_dataloader
 
-
-def supervised_training(model, train_loader, val_loader, loss_fn, device, args, silent=False):
+def supervised_training(model, train_dataset, val_dataset, loss_fn, device, args, silent=False):
+    train_loader = build_dataloader(
+        train_dataset, args["batch_size"], args["n_workers"]
+    )
+    val_loader = build_dataloader(val_dataset, args["batch_size"], args["n_workers"])
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -41,13 +45,10 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args, 
             scheduler.step()
 
         if epoch_counter % args["log_every_n_steps"] == 0:
-            eval_res = standard_evaluation(model, val_loader, device, loss_fn, args)
-            top1, top5 = eval_res["top1"], eval_res["top5"]
-            test_loss = eval_res["loss"]
+            eval_res = standard_evaluation(model, val_dataset, device, loss_fn, args)
             if not silent:
-                print(
-                    f"Epoch: {epoch_counter}\tTop1 accuracy: {top1:.4f}\tTop5 accuracy: {top5:.4f}\tTest loss: {test_loss:.4f}"
-                )
+                sentence = f"Epoch: {epoch_counter}\t" + "\t".join([f"{k}: {v:.4f}" for k, v in eval_res.items()])
+                print(sentence)
             torch.save(
                 model.state_dict(),
                 f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
@@ -58,14 +59,18 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args, 
         model.state_dict(),
         f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
     )
-    eval_res = standard_evaluation(model, val_loader, device, loss_fn, args)
+    eval_res = standard_evaluation(model, val_dataset, device, loss_fn, args)
     test_records.append(eval_res)
     return records, test_records
 
 
 def contrastive_training(
-    model, train_loader, val_loader, loss_fn, criterion, device, args, silent=False
+    model, train_dataset, val_dataset, loss_fn, criterion, device, args, silent=False
 ):
+    train_loader = build_dataloader(
+        train_dataset, args["batch_size"], args["n_workers"]
+    )
+    val_loader = build_dataloader(val_dataset, args["batch_size"], args["n_workers"])
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -100,14 +105,11 @@ def contrastive_training(
 
         if epoch_counter % args["log_every_n_steps"] == 0:
             eval_res = contrastive_evaluation(
-                model, val_loader, device, loss_fn, criterion, args
+                model, val_dataset, device, loss_fn, criterion, args
             )
-            top1, top5 = eval_res["top1"], eval_res["top5"]
-            test_loss = eval_res["loss"]
             if not silent:
-                print(
-                    f"Epoch: {epoch_counter}\tTop1 accuracy: {top1:.4f}\tTop5 accuracy: {top5:.4f}\tTest loss: {test_loss:.4f}"
-                )
+                sentence = f"Epoch: {epoch_counter}\t" + "\t".join([f"{k}: {v:.4f}" for k, v in eval_res.items()])
+                print(sentence)
             torch.save(
                 model.state_dict(),
                 f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
@@ -119,8 +121,8 @@ def contrastive_training(
         f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
     )
     eval_res = contrastive_evaluation(
-                model, val_loader, device, loss_fn, criterion, args
-            )
+            model, val_dataset, device, loss_fn, criterion, args
+        )
     test_records.append(eval_res)
     return records, test_records
 
@@ -130,7 +132,7 @@ if __name__ == "__main__":
 
     from dataset import SimCLRDataset
     from model import SimCLRCNN
-
+    torch.manual_seed(4090)
     on_linux = sys.platform.startswith("linux")
     args = {
         "dataset": "cifar10",
@@ -139,7 +141,7 @@ if __name__ == "__main__":
         "sample_rate": 1,
         "epochs": 100,
         "n_views": 2,
-        "out_dim": 128,
+        "out_dim": 256,
         "lr": 3e-4,
         "wd": 1e-6,
         "log_every_n_steps": 5,
@@ -147,25 +149,16 @@ if __name__ == "__main__":
         "temperature": 0.07,
         "learning": "contrastive",
         "val_split": 0.2,
+        "ft_ratio": 0.01,
     }
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     data = SimCLRDataset(args["dataset"])
-    build_dataloader = lambda dataset: torch.utils.data.DataLoader(
-        dataset,
-        batch_size=args["batch_size"],
-        shuffle=True,
-        drop_last=True,
-        num_workers=args["n_workers"],
-    )
 
     train_dataset, val_dataset = data.get_train_val_datasets(
         args["n_views"], args["val_split"]
     )
-    train_loader = build_dataloader(train_dataset)
-    val_loader = build_dataloader(val_dataset)
     test_dataset = data.get_test_dataset(args["n_views"])
-    test_loader = build_dataloader(test_dataset)
     num_classes = data.num_classes
 
     model_args = {
@@ -181,25 +174,64 @@ if __name__ == "__main__":
         model = torch.compile(model)
         torch.set_float32_matmul_precision("high")
 
+
+    ft_train_records, ft_test_records = [], []
+
     if args["learning"] == "contrastive":
         loss_fn = info_nce_loss
         criterion = torch.nn.CrossEntropyLoss()
-        train_records, test_records = contrastive_training(
-            model, train_loader, val_loader, loss_fn, criterion, device, args
+        train_records, val_records = contrastive_training(
+            model, train_dataset, val_dataset, loss_fn, criterion, device, args
         )
+        if args["ft_ratio"] > 0:
+            print("Fine-tuning...")
+            model.train()
+            model.finetune(num_classes)
+            model = model.to(device)
+            train_dataset, val_dataset = data.get_train_val_datasets(
+                1, args["val_split"]
+            )
+            test_dataset = data.get_test_dataset(1)
+            ft_dataset = torch.utils.data.Subset(
+                train_dataset, range(int(len(train_dataset) * args["ft_ratio"]))
+            )
+            ft_train_records, ft_test_records = supervised_training(
+                model, ft_dataset, val_dataset, criterion, device, args, silent=False
+            )
+            test_records = standard_evaluation(model, test_dataset, device, criterion, args)
+        else:
+            test_records = contrastive_evaluation(
+                model, test_dataset, device, loss_fn, criterion, args
+            )
+        
+
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
-        train_records, test_records = supervised_training(
-            model, train_loader, val_loader, loss_fn, device, args
+        train_records, val_records = supervised_training(
+            model, train_dataset, val_dataset, loss_fn, device, args
         )
+        test_records = standard_evaluation(model, test_dataset, device, loss_fn, args)
 
+    print("Test results: ", test_records)
     timestamp = pd.Timestamp.now().strftime("%m%d%H%M")
 
-    df = pd.DataFrame.from_records(train_records)
-    test_df = pd.DataFrame.from_records(test_records)
-    df.to_csv(
+    pd.DataFrame.from_records(train_records).to_csv(
         f"logs/{args['model']}_{args['dataset']}_{timestamp}_train.csv", index=False
     )
-    test_df.to_csv(
+    pd.DataFrame.from_records(val_records).to_csv(
+        f"logs/{args['model']}_{args['dataset']}_{timestamp}_val.csv", index=False
+    )
+    pd.DataFrame(test_records).to_csv(
         f"logs/{args['model']}_{args['dataset']}_{timestamp}_test.csv", index=False
+    )
+    if len(ft_train_records) > 0:
+        pd.DataFrame.from_records(ft_train_records).to_csv(
+            f"logs/{args['model']}_{args['dataset']}_{timestamp}_ft_train.csv", index=False
+        )
+        pd.DataFrame.from_records(ft_test_records).to_csv(
+            f"logs/{args['model']}_{args['dataset']}_{timestamp}_ft_val.csv", index=False
+        )
+    torch.save(
+        model.state_dict(),
+        f"checkpoints/{args['model']}_{args['dataset']}_{timestamp}.pt",
     )
