@@ -7,7 +7,9 @@ from tqdm import tqdm
 from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
 
 
-def supervised_training(model, train_loader, val_loader, loss_fn, device, args):
+def supervised_training(model, train_loader, val_loader, loss_fn, device, args, silent=False):
+    if silent:
+        print = lambda *args, **kwargs: None
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -18,10 +20,13 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args):
     )
     records = []
     test_records = []
+    
 
     for epoch_counter in range(args["epochs"]):
-
-        for images, labels in tqdm(train_loader):
+        bar = train_loader
+        if not silent:
+            bar = tqdm(train_loader)
+        for images, labels in bar:
             images = images.to(device)
             labels = labels.to(device)
             logits = model(images)
@@ -59,8 +64,10 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args):
 
 
 def contrastive_training(
-    model, train_loader, val_loader, loss_fn, criterion, device, args
+    model, train_loader, val_loader, loss_fn, criterion, device, args, silent=False
 ):
+    if silent:
+        print = lambda *args, **kwargs: None
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -73,8 +80,10 @@ def contrastive_training(
     test_records = []
 
     for epoch_counter in range(args["epochs"]):
-
-        for images, _ in tqdm(train_loader):
+        bar = train_loader
+        if not silent:
+            bar = tqdm(train_loader)
+        for images, _ in bar:
             images = torch.cat(images, dim=0)
             images = images.to(device)
             features = model(images)
