@@ -8,8 +8,6 @@ from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
 
 
 def supervised_training(model, train_loader, val_loader, loss_fn, device, args, silent=False):
-    if silent:
-        print = lambda *args, **kwargs: None
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -36,8 +34,8 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args, 
             loss.backward()
             optimizer.step()
             n_iter += 1
-
-        print(f"Epoch: {epoch_counter}\tLoss: {loss.item():.4f}\t")
+        if not silent:
+            print(f"Epoch: {epoch_counter}\tLoss: {loss.item():.4f}\t")
         records.append({"epoch": epoch_counter, "loss": loss.item()})
         if epoch_counter >= 10:
             scheduler.step()
@@ -46,16 +44,16 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args, 
             eval_res = standard_evaluation(model, val_loader, device, loss_fn, args)
             top1, top5 = eval_res["top1"], eval_res["top5"]
             test_loss = eval_res["loss"]
-            print(
-                f"Epoch: {epoch_counter}\tTop1 accuracy: {top1:.4f}\tTop5 accuracy: {top5:.4f}\tTest loss: {test_loss:.4f}"
-            )
+            if not silent:
+                print(
+                    f"Epoch: {epoch_counter}\tTop1 accuracy: {top1:.4f}\tTop5 accuracy: {top5:.4f}\tTest loss: {test_loss:.4f}"
+                )
             torch.save(
                 model.state_dict(),
                 f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
             )
             test_records.append(eval_res)
 
-    print("Training has finished.")
     torch.save(
         model.state_dict(),
         f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
@@ -68,8 +66,6 @@ def supervised_training(model, train_loader, val_loader, loss_fn, device, args, 
 def contrastive_training(
     model, train_loader, val_loader, loss_fn, criterion, device, args, silent=False
 ):
-    if silent:
-        print = lambda *args, **kwargs: None
     os.makedirs("checkpoints", exist_ok=True)
     n_iter = 0
     optimizer = torch.optim.Adam(
@@ -96,8 +92,8 @@ def contrastive_training(
             loss.backward()
             optimizer.step()
             n_iter += 1
-
-        print(f"Epoch: {epoch_counter}\tLoss: {loss.item():.4f}\t")
+        if not silent:
+            print(f"Epoch: {epoch_counter}\tLoss: {loss.item():.4f}\t")
         records.append({"epoch": epoch_counter, "loss": loss.item()})
         if epoch_counter >= 10:
             scheduler.step()
@@ -108,16 +104,16 @@ def contrastive_training(
             )
             top1, top5 = eval_res["top1"], eval_res["top5"]
             test_loss = eval_res["loss"]
-            print(
-                f"Epoch: {epoch_counter}\tTop1 accuracy: {top1:.4f}\tTop5 accuracy: {top5:.4f}\tTest loss: {test_loss:.4f}"
-            )
+            if not silent:
+                print(
+                    f"Epoch: {epoch_counter}\tTop1 accuracy: {top1:.4f}\tTop5 accuracy: {top5:.4f}\tTest loss: {test_loss:.4f}"
+                )
             torch.save(
                 model.state_dict(),
                 f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
             )
             test_records.append(eval_res)
 
-    print("Training has finished.")
     torch.save(
         model.state_dict(),
         f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
