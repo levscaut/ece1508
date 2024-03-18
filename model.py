@@ -20,7 +20,7 @@ class SimCLRCNN(nn.Module):
         if self.classifer is not None:
             x = self.classifer(x)
         return x
-    
+
     def finetune(self, num_classes):
         # Freeze the parameters of the backbone
         for param in self.backbone.parameters():

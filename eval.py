@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
+
 from utils import build_dataloader
+
 
 def info_nce_loss(features, device, args):
     labels = torch.cat(
@@ -50,6 +52,7 @@ def topk(output, target, topk=(1,)):
             correct_k = correct[:k].reshape(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+
 
 def standard_evaluation(model, test_dataset, device, criterion, args):
     test_loader = build_dataloader(test_dataset, args["batch_size"], args["n_workers"])

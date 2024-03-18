@@ -1,14 +1,15 @@
-import pandas as pd
 import os
 import sys
 
+import pandas as pd
 import torch
 from tqdm import tqdm
 
-from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
-from train import contrastive_training, supervised_training
 from dataset import SimCLRDataset
+from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
 from model import SimCLRCNN
+from train import contrastive_training, supervised_training
+
 
 def train(args):
     on_linux = sys.platform.startswith("linux")
@@ -49,7 +50,14 @@ def train(args):
         loss_fn = info_nce_loss
         criterion = torch.nn.CrossEntropyLoss()
         train_records, test_records = contrastive_training(
-            model, train_loader, val_loader, loss_fn, criterion, device, args, silent=True
+            model,
+            train_loader,
+            val_loader,
+            loss_fn,
+            criterion,
+            device,
+            args,
+            silent=True,
         )
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
@@ -63,8 +71,10 @@ def train(args):
 
 
 if __name__ == "__main__":
-    from flaml import tune
     import pickle
+
+    from flaml import tune
+
     args = {
         "dataset": "cifar10",
         "model": "resnet50",
