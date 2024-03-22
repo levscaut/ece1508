@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 from utils import build_dataloader
 
-
+'''
 def info_nce_loss(features, device, args):
     labels = torch.cat(
         [torch.arange(args["batch_size"]) for i in range(args["n_views"])], dim=0
@@ -35,7 +35,45 @@ def info_nce_loss(features, device, args):
 
     logits = logits / args["temperature"]
     return logits, labels
+'''
 
+def info_nce_loss(features, device, args):
+    """
+    Compute logits and labels for the InfoNCE loss from a batch of features,
+    considering the specified device and arguments.
+
+    Args:
+        features: Tensor of shape [2*batch_size, feature_dim] where
+                  2*batch_size is the total number of features, consisting of
+                  batch_size pairs of positive examples. Each pair should be
+                  adjacent in the tensor (i.e., 0 and 1 are a pair, 2 and 3 are
+                  a pair, etc.).
+        device: The device (CPU or CUDA) where tensors should be moved.
+        args: Dictionary containing configurations, specifically 'temperature' for scaling the dot product in similarity calculation.
+
+    Returns:
+        logits: Tensor of shape [2*batch_size, 2*batch_size] containing the similarity scores between all pairs.
+        labels: Tensor of shape [2*batch_size] containing the indices of the positive examples for each element in the batch.
+    """
+    temperature = args['temperature']
+    features = features.to(device)
+
+    # Normalize features
+    features = F.normalize(features, p=2, dim=1)
+
+    # Compute similarity as dot product
+    anchor_dot_contrast = torch.matmul(features, features.T) / temperature
+
+    # Generate labels
+    batch_size = features.size(0) // 2
+    labels = torch.arange(0, batch_size, dtype=torch.long, device=device)
+    labels = torch.cat([labels, labels], dim=0)  # Duplicate for both views
+
+    # Subtract max for numerical stability
+    logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+    logits = anchor_dot_contrast - logits_max.detach()
+
+    return logits, labels
 
 def topk(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
