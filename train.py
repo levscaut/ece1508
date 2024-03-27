@@ -94,6 +94,8 @@ def contrastive_training(
             images = images.to(device)
             features = model(images)
             logits, labels = loss_fn(features, device, args)
+            if torch.any(torch.nonzero(labels)):
+                print("here")
             loss = criterion(logits, labels)
             optimizer.zero_grad()
 
@@ -144,9 +146,9 @@ if __name__ == "__main__":
     args = {
         "dataset": "cifar10",
         "model": "resnet50",
-        "batch_size": 256,
+        "batch_size": 2048,
         "sample_rate": 1,
-        "epochs": 100,
+        "epochs": 1,
         "n_views": 2,
         "out_dim": 256,
         "lr": 3e-4,
@@ -155,7 +157,7 @@ if __name__ == "__main__":
         "n_workers": 16,
         "temperature": 0.07,
         "learning": "contrastive",
-        "val_split": 0.2,
+        "val_split": 0,
         "ft_ratio": 0.1,
     }
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -190,31 +192,9 @@ if __name__ == "__main__":
             model, train_dataset, val_dataset, loss_fn, criterion, device, args
         )
 
-        if args["ft_ratio"] > 0:
-            torch.save(
-                model, f"checkpoints/{args['model']}_{args['dataset']}_final.pt",
-            )
-            print("Fine-tuning...")
-            model.train()
-            model.finetune(num_classes)
-            model = model.to(device)
-            train_dataset, val_dataset = data.get_train_val_datasets(
-                1, args["val_split"]
-            )
-            test_dataset = data.get_test_dataset(1)
-            ft_dataset = torch.utils.data.Subset(
-                train_dataset, range(int(len(train_dataset) * args["ft_ratio"]))
-            )
-            ft_train_records, ft_test_records = supervised_training(
-                model, ft_dataset, val_dataset, criterion, device, args, silent=False
-            )
-            test_records = standard_evaluation(
-                model, test_dataset, device, criterion, args
-            )
-        else:
-            test_records = contrastive_evaluation(
-                model, test_dataset, device, loss_fn, criterion, args
-            )
+        test_records = contrastive_evaluation(
+            model, test_dataset, device, loss_fn, criterion, args
+        )
 
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
@@ -226,7 +206,7 @@ if __name__ == "__main__":
     print("Test results: ", test_records)
     timestamp = pd.Timestamp.now().strftime("%m%d%H%M")
     torch.save(
-        model, f"checkpoints/{args['model']}_{args['dataset']}_{timestamp}.pt",
+        model.state_dict(), f"checkpoints/{args['model']}_{args['dataset']}_{timestamp}.pt",
     )
 
     pd.DataFrame.from_records(train_records).to_csv(
