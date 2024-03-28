@@ -1,23 +1,27 @@
 import torch
 import sys
+import os
 from dataset import SimCLRDataset
 from model import SimCLRCNN
 from train import supervised_training, standard_evaluation
 
 
 def finetune(model: SimCLRCNN, dataset: SimCLRDataset, device, args):
+    artifacts_dir = os.path.join(os.path.dirname(os.path.dirname(args["ckpt_path"])), f"finetune_{args['dataset']}_ratio_{args['ft_ratio']}")
     num_classes = dataset.num_classes
     criterion = torch.nn.CrossEntropyLoss()
     ckpt_path = args['ckpt_path']
     model.train()
-    model.load_state_dict(torch.load(ckpt_path))
+    ckpt_weights = torch.load(ckpt_path)
+    ckpt_weights = {k.replace("_orig_mod.", ""): v for k, v in ckpt_weights.items()}
+    model.load_state_dict(ckpt_weights)
     model.finetune(num_classes)
     model = model.to(device)
     train_dataset = dataset.get_train_dataset(1, args["ft_ratio"])
     test_dataset = dataset.get_test_dataset(1)
     
     train_records, _ = supervised_training(
-        model, train_dataset, None, criterion, device, args, silent=False
+        model, train_dataset, None, criterion, device, args, artifacts_dir, silent=False
     )
     test_records = standard_evaluation(
         model, test_dataset, device, criterion, args
@@ -32,7 +36,7 @@ if __name__ == "__main__":
     args = {
         "dataset": "cifar10",
         "model": "resnet50",
-        "batch_size": 256,
+        "batch_size": 512,
         "sample_rate": 1,
         "epochs": 100,
         "n_views": 2,
@@ -45,8 +49,10 @@ if __name__ == "__main__":
         "learning": "contrastive",
         "val_split": 0,
         "ft_ratio": 1,
-        "ckpt_path": "/home/levscaut/ece1508/checkpoints/resnet50_cifar10_backbone.pt",
+        "ckpt_path": "/home/levscaut/ece1508/artifacts/resnet50_cifar10_500epochs/checkpoints/final.pt",
+        "ckpt": "",
     }
+    
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data = SimCLRDataset(args["dataset"])
     num_classes = data.num_classes

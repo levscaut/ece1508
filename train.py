@@ -11,8 +11,15 @@ from utils import build_dataloader
 
 
 def supervised_training(
-    model, train_dataset, val_dataset, loss_fn, device, args, ckpt_dir, silent=False
+    model, train_dataset, val_dataset, loss_fn, device, args, artifacts_dir, silent=False
 ):
+    if args['ckpt'] != "":
+        model.load_state_dict(torch.load(args['ckpt']))
+    ckpt_dir = f"{artifacts_dir}/checkpoints"
+    log_dir = f"{artifacts_dir}/logs"
+    os.makedirs(ckpt_dir, exist_ok=True)
+    logger = SummaryWriter(log_dir)
+
     train_loader = build_dataloader(
         train_dataset, args["batch_size"], args["n_workers"]
     )
@@ -37,10 +44,11 @@ def supervised_training(
             logits = model(images)
             loss = loss_fn(logits, labels)
             optimizer.zero_grad()
-
             loss.backward()
             optimizer.step()
+            logger.add_scalar("Train Loss", loss.item(), n_iter)
             n_iter += 1
+
         if not silent:
             print(f"Epoch: {epoch_counter}\tLoss: {loss.item():.4f}\t")
         records.append({"epoch": epoch_counter, "loss": loss.item()})
@@ -151,7 +159,7 @@ def parse_args():
     parser.add_argument("--model", type=str, default="resnet50", help="Model name.")
     parser.add_argument("--batch_size", type=int, default=512, help="Batch size.")
     parser.add_argument("--sample_rate", type=float, default=1, help="Sample rate.")
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs.")
+    parser.add_argument("--epochs", type=int, default=500, help="Number of epochs.")
     parser.add_argument("--n_views", type=int, default=2, help="Number of views for contrastive learning.")
     parser.add_argument("--out_dim", type=int, default=256, help="Output dimension.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate.")
@@ -160,7 +168,7 @@ def parse_args():
     parser.add_argument("--n_workers", type=int, default=16, help="Number of workers.")
     parser.add_argument("--temperature", "-t", type=float, default=0.5, help="Temperature for contrastive loss.")
     parser.add_argument("--learning", type=str, default="contrastive", choices=["contrastive", "supervised"], help="Learning mode.")
-    parser.add_argument("--val_split", type=float, default=0.1, help="Validation split ratio.")
+    parser.add_argument("--val_split", type=float, default=0.0, help="Validation split ratio.")
     parser.add_argument("--ft_ratio", type=float, default=0.1, help="Fine-tuning ratio.")
     parser.add_argument("--ckpt", type=str, default="", help="Checkpoint resume path")
     return vars(parser.parse_args())
