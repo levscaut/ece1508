@@ -1,15 +1,17 @@
 import os
 import sys
+import argparse
 
 import torch
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from eval import contrastive_evaluation, info_nce_loss, standard_evaluation
+from eval import contrastive_evaluation, info_nce_loss, standard_evaluation, info_nce_loss_newnew
 from utils import build_dataloader
 
 
 def supervised_training(
-    model, train_dataset, val_dataset, loss_fn, device, args, silent=False
+    model, train_dataset, val_dataset, loss_fn, device, args, ckpt_dir, silent=False
 ):
     train_loader = build_dataloader(
         train_dataset, args["batch_size"], args["n_workers"]
@@ -54,13 +56,13 @@ def supervised_training(
                 print(sentence)
             torch.save(
                 model.state_dict(),
-                f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
+                f"{ckpt_dir}/{epoch_counter}.pt",
             )
             test_records.append(eval_res)
 
     torch.save(
         model.state_dict(),
-        f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
+        f"{ckpt_dir}/final.pt",
     )
     if val_dataset is not None:
         eval_res = standard_evaluation(model, val_dataset, device, loss_fn, args)
@@ -69,12 +71,20 @@ def supervised_training(
 
 
 def contrastive_training(
-    model, train_dataset, val_dataset, loss_fn, criterion, device, args, silent=False
+    model, train_dataset, val_dataset, loss_fn, device, args, artifacts_dir, *, silent=False
 ):
+    if args['ckpt'] != "":
+        model.load_state_dict(torch.load(args['ckpt']))
     train_loader = build_dataloader(
         train_dataset, args["batch_size"], args["n_workers"]
     )
-    os.makedirs("checkpoints", exist_ok=True)
+
+    log_dir = f"{artifacts_dir}/logs"
+    ckpt_dir = f"{artifacts_dir}/checkpoints"
+    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(ckpt_dir, exist_ok=True)
+    logger = SummaryWriter(log_dir)
+
     n_iter = 0
     optimizer = torch.optim.Adam(
         model.parameters(), lr=args["lr"], weight_decay=args["wd"]
@@ -93,15 +103,13 @@ def contrastive_training(
             images = torch.cat(images, dim=0)
             images = images.to(device)
             features = model(images)
-            logits, labels = loss_fn(features, device, args)
-            if torch.any(torch.nonzero(labels)):
-                print("here")
-            loss = criterion(logits, labels)
+            loss = loss_fn(features, device, args)
             optimizer.zero_grad()
-
             loss.backward()
             optimizer.step()
             n_iter += 1
+            logger.add_scalar("Loss", loss.item(), n_iter)
+            logger.flush()
         if not silent:
             print(f"Epoch: {epoch_counter}\tLoss: {loss.item():.4f}\t")
         records.append({"epoch": epoch_counter, "loss": loss.item()})
@@ -110,58 +118,68 @@ def contrastive_training(
 
         if epoch_counter % args["log_every_n_steps"] == 0 and val_dataset is not None:
             eval_res = contrastive_evaluation(
-                model, val_dataset, device, loss_fn, criterion, args
+                model, val_dataset, device, loss_fn, args
             )
+            logger.add_scalar("Val Loss", eval_res["loss"], n_iter)
             if not silent:
                 sentence = f"Epoch: {epoch_counter}\t" + "\t".join(
                     [f"{k}: {v:.4f}" for k, v in eval_res.items()]
                 )
                 print(sentence)
+            test_records.append(eval_res)
+        
+        if epoch_counter % 10 * args["log_every_n_steps"] == 0:
             torch.save(
                 model.state_dict(),
-                f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
+                f"{ckpt_dir}/{epoch_counter}.pt",
             )
-            test_records.append(eval_res)
 
     torch.save(
         model.state_dict(),
-        f"checkpoints/{args['model']}_{args['dataset']}_{epoch_counter}.pt",
+        f"{ckpt_dir}/final.pt",
     )
     if val_dataset is not None:
         eval_res = contrastive_evaluation(
-            model, val_dataset, device, loss_fn, criterion, args
+            model, val_dataset, device, loss_fn, args
         )
         test_records.append(eval_res)
     return records, test_records
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train a SimCLR model.")
+    parser.add_argument("--dataset", type=str, default="cifar10", help="Dataset name.")
+    parser.add_argument("--model", type=str, default="resnet50", help="Model name.")
+    parser.add_argument("--batch_size", type=int, default=512, help="Batch size.")
+    parser.add_argument("--sample_rate", type=float, default=1, help="Sample rate.")
+    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs.")
+    parser.add_argument("--n_views", type=int, default=2, help="Number of views for contrastive learning.")
+    parser.add_argument("--out_dim", type=int, default=256, help="Output dimension.")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate.")
+    parser.add_argument("--wd", type=float, default=1e-4, help="Weight decay.")
+    parser.add_argument("--log_every_n_steps", type=int, default=5, help="Logging frequency.")
+    parser.add_argument("--n_workers", type=int, default=16, help="Number of workers.")
+    parser.add_argument("--temperature", "-t", type=float, default=0.5, help="Temperature for contrastive loss.")
+    parser.add_argument("--learning", type=str, default="contrastive", choices=["contrastive", "supervised"], help="Learning mode.")
+    parser.add_argument("--val_split", type=float, default=0.1, help="Validation split ratio.")
+    parser.add_argument("--ft_ratio", type=float, default=0.1, help="Fine-tuning ratio.")
+    parser.add_argument("--ckpt", type=str, default="", help="Checkpoint resume path")
+    return vars(parser.parse_args())
 
-if __name__ == "__main__":
+
+def train(args):
     import pandas as pd
 
     from dataset import SimCLRDataset
     from model import SimCLRCNN
 
     torch.manual_seed(4090)
+    timestamp = pd.Timestamp.now().strftime("%m%d%H%M")
     on_linux = sys.platform.startswith("linux")
-    args = {
-        "dataset": "cifar10",
-        "model": "resnet50",
-        "batch_size": 2048,
-        "sample_rate": 1,
-        "epochs": 1,
-        "n_views": 2,
-        "out_dim": 256,
-        "lr": 3e-4,
-        "wd": 1e-6,
-        "log_every_n_steps": 5,
-        "n_workers": 16,
-        "temperature": 0.07,
-        "learning": "contrastive",
-        "val_split": 0,
-        "ft_ratio": 0.1,
-    }
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    artifacts_dir = f"artifacts/{args['model']}_{args['dataset']}_{timestamp}"
+    os.makedirs(artifacts_dir, exist_ok=True)
+    print(args)
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     data = SimCLRDataset(args["dataset"])
 
     train_dataset, val_dataset = data.get_train_val_datasets(
@@ -183,44 +201,54 @@ if __name__ == "__main__":
         model = torch.compile(model)
         torch.set_float32_matmul_precision("high")
 
-    ft_train_records, ft_test_records = [], []
-
     if args["learning"] == "contrastive":
-        loss_fn = info_nce_loss
-        criterion = torch.nn.CrossEntropyLoss()
+        loss_fn = info_nce_loss_newnew
         train_records, val_records = contrastive_training(
-            model, train_dataset, val_dataset, loss_fn, criterion, device, args
+            model, train_dataset, val_dataset, loss_fn, device, args, artifacts_dir
         )
 
         test_records = contrastive_evaluation(
-            model, test_dataset, device, loss_fn, criterion, args
+            model, test_dataset, device, loss_fn, args
         )
 
     else:
         loss_fn = torch.nn.CrossEntropyLoss()
         train_records, val_records = supervised_training(
-            model, train_dataset, val_dataset, loss_fn, device, args
+            model, train_dataset, val_dataset, loss_fn, device, args, artifacts_dir
         )
         test_records = standard_evaluation(model, test_dataset, device, loss_fn, args)
 
     print("Test results: ", test_records)
-    timestamp = pd.Timestamp.now().strftime("%m%d%H%M")
-    torch.save(
-        model.state_dict(), f"checkpoints/{args['model']}_{args['dataset']}_{timestamp}.pt",
-    )
 
-    pd.DataFrame.from_records(train_records).to_csv(
-        f"logs/{args['model']}_{args['dataset']}_{timestamp}_train.csv", index=False
+
+    pd.DataFrame(train_records).to_csv(
+        f"{artifacts_dir}/train.csv", index=False
     )
-    pd.DataFrame.from_records(val_records).to_csv(
-        f"logs/{args['model']}_{args['dataset']}_{timestamp}_val.csv", index=False
+    pd.DataFrame(val_records).to_csv(
+        f"{artifacts_dir}/val.csv", index=False
     )
-    if len(ft_train_records) > 0:
-        pd.DataFrame.from_records(ft_train_records).to_csv(
-            f"logs/{args['model']}_{args['dataset']}_{timestamp}_ft_train.csv",
-            index=False,
-        )
-        pd.DataFrame.from_records(ft_test_records).to_csv(
-            f"logs/{args['model']}_{args['dataset']}_{timestamp}_ft_val.csv",
-            index=False,
-        )
+    pd.DataFrame.from_dict(test_records, orient="index").T.to_csv(
+        f"{artifacts_dir}/test.csv", index=False
+    )
+    return test_records
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    train(args)
+    """
+    # Hyperparameter tuning example
+
+    import flaml.tune
+    
+    args['lr'] = flaml.tune.loguniform(1e-4, 1)
+    args['epochs'] = 10
+    analysis = flaml.tune.run(
+        train,
+        config=args,
+        num_samples=10,
+        metric="loss",
+        mode="min",
+    )
+    print(analysis.best_config)
+    """
