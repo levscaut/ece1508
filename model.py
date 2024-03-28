@@ -10,10 +10,11 @@ class SimCLRCNN(nn.Module):
         self.out_dim = out_dim
         self.classifer = None
         if mod:
+            # line 14-17 provides much improvement, but cost much more VRAM
             conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             nn.init.kaiming_normal_(conv1.weight, mode="fan_out", nonlinearity="relu")
             self.backbone.conv1 = conv1
-            # self.backbone.maxpool = nn.Identity()
+            self.backbone.maxpool = nn.Identity()
             dim_mlp = self.backbone.fc.in_features
             self.backbone.fc = nn.Sequential(
                 nn.Linear(dim_mlp, dim_mlp), nn.ReLU(), self.backbone.fc
